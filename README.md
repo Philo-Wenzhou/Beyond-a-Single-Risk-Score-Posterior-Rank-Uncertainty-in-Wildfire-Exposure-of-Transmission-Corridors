@@ -1,7 +1,8 @@
 # Physics-Informed Bayesian Wildfire Exposure Pipeline for California
 
-This project is a reproducible preprint workspace for estimating wildfire exposure
-of California transmission-line segments under extreme-weather uncertainty.
+This project is a reproducible research workspace for estimating wildfire
+exposure of California transmission-line segments under uncertainty in weather,
+fuel, and terrain conditions.
 
 Core decision outputs:
 
@@ -43,22 +44,6 @@ Default case-study window:
 - period: 2017-2023
 - spatial target: transmission-line segments
 - decision unit: line segment or buffered line segment
-
-## Core Project Notes
-
-- [Project memory](PROJECT_MEMORY.md)
-- [LaTeX manuscript draft](manuscript/main.tex)
-- [Approved experiment design](docs/approved_experiment_design.md)
-- [Data inventory](docs/data_inventory.md)
-- [Public data sources](docs/data_sources.md)
-- [Data and gap plan](docs/data_gap_plan.md)
-- [Analysis framework](docs/analysis_framework.md)
-- [CAL FIRE cause analysis](docs/calfire_cause_analysis.md)
-- [Manuscript results summary](docs/manuscript_results_summary.md)
-- [Phase 1 outputs](docs/phase1_outputs.md)
-- [Phase 8 manuscript visuals script](scripts/phase8_manuscript_visuals.py)
-- [Project merge note](docs/project_merge_note.md)
-- [Execution roadmap](docs/roadmap.md)
 
 ## Research Boundary
 
