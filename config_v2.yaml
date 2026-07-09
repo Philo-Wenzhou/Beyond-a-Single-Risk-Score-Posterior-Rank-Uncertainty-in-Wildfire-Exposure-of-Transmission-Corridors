@@ -1,0 +1,73 @@
+project:
+  name: Bayesian_Wildfire_Exposure_CA_V2
+  root: .
+  version: v2_spatiotemporal_hierarchical
+  created: 2026-07-08
+
+scope:
+  interpretation: retrospective annual external wildfire exposure ranking
+  receptor_assets_only: true
+  no_ignition_failure_outage_damage_responsibility_claims: true
+  no_prospective_forecasting: true
+
+years:
+  all: [2017, 2018, 2019, 2020, 2021, 2022, 2023]
+  train: [2017, 2018, 2019, 2020, 2021]
+  holdout: [2022, 2023]
+
+season:
+  primary:
+    name: may_nov
+    start_mm_dd: "05-01"
+    end_mm_dd: "11-30"
+  sensitivity:
+    name: jun_oct
+    start_mm_dd: "06-01"
+    end_mm_dd: "10-31"
+
+spatial:
+  project_crs: "EPSG:3310"
+  segment_length_m: 1000
+  exposure_buffer_m: 1000
+  block_sizes_m: [25000, 50000]
+
+paths:
+  v1_manuscript_candidate: manuscript/main_submission_clean.tex
+  v1_manuscript_prompt_name: manuscript/main_submission_revised.tex
+  references_bib: references_wildfire_exposure_verified.bib
+  segments_1km: data/processed/phase1/segments_1km.gpkg
+  segment_buffers_1km: data/processed/phase1/segment_buffers_1km.gpkg
+  segment_year_labels: data/processed/phase1/segment_year_labels_2017_2023.csv
+  phase1_summary: data/processed/phase1/phase1_summary.json
+  v1_model_table: data/processed/phase3/segment_year_model_table.parquet
+  v1_static_covariates: data/processed/phase3/segment_static_covariates.parquet
+  v1_weather_covariates: data/processed/phase3/segment_year_weather_covariates.parquet
+  v1_segment_predictions: data/processed/phase4/phase4_segment_year_predictions.parquet
+  v1_segment_posterior: data/processed/phase4/phase4_segment_posterior_decision_metrics.parquet
+  v1_model_metrics: data/processed/phase6/phase6_model_comparison_metrics.parquet
+  raw_gridmet_dir: data/raw/gridmet
+  interim_gridmet_dir: data/interim/gridmet_study_area
+  dem: data/raw/dem_3dep/usgs_3dep_dem_study_area_2048.tif
+  landfire_manifest: outputs/tables/landfire_lfps_output_manifest.json
+  landfire_dir: data/interim/landfire_study_area
+
+gridmet:
+  variables: [fm100, fm1000, vpd, erc, bi, vs, rmin, pr]
+
+landfire:
+  expected_band_order:
+    1: LF2024_FBFM40
+    2: LF2024_CC
+    3: LF2024_CH
+    4: LF2024_CBH
+    5: LF2024_CBD
+  decode:
+    LF2024_CH: raw_divide_by_10_m
+    LF2024_CBH: raw_divide_by_10_m
+    LF2024_CBD: raw_divide_by_100_kg_m3
+  fbfm40_mapping_required: true
+
+models:
+  label: exogenous_fire_exposure
+  posterior_rank_threshold: 0.10
+  random_seed: 20260708

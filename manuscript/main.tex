@@ -1,0 +1,572 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{placeins}
+\usepackage{array}
+\setlength{\emergencystretch}{2em}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\ind}{\mathbf{1}}
+\DeclareMathOperator{\logit}{logit}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  citecolor=black,
+  urlcolor=blue
+}
+
+\graphicspath{{../outputs/figures/}}
+
+\title{A Public-Data Bayesian Framework for Retrospective External Wildfire Exposure Ranking of Transmission-Line Segments}
+\author{Wenxing Yi}
+\date{July 7, 2026 revision}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Transmission-line wildfire decisions often require segment-level triage, while
+equipment-condition, outage, and inspection records are not public. This paper
+presents a reproducible public-data framework for retrospective external
+wildfire exposure ranking of California transmission-line segments. The line
+segments are treated only as receptor assets. They are not modeled as ignition
+sources, failure points, outage causes, or responsibility units. Using
+California Energy Commission transmission lines, CAL FIRE FRAP fire perimeters
+and cause fields, gridMET weather summaries, LANDFIRE LF2024 fuel and canopy
+layers, and USGS 3DEP terrain, the workflow constructs a 2017--2023
+segment-year panel for the Northern Sierra and Southern Cascades. The main
+label excludes CAL FIRE CAUSE = 11, Electrical Power, to reduce conflation
+between external wildfire exposure and electrical-power fire cause. A Bayesian
+logistic exposure model is compared with a deterministic public physics score
+and machine-learning baselines under a 2022--2023 temporal holdout. Bayesian
+Laplace and L2 logistic discrimination are close; the Bayesian contribution is
+therefore framed as posterior exceedance probability and posterior top-decile
+rank probability for rare-event triage, not as universal classification
+superiority. Probability calibration remains limited relative to the rare-event
+climatology baseline, so posterior rank probability is treated as the primary
+decision output.
+\end{abstract}
+
+\section{Introduction}
+
+Wildfire exposure increasingly affects linear infrastructure systems. For
+transmission corridors, screening decisions are often made at the segment scale
+with incomplete public information about asset condition, protection systems,
+inspection history, vegetation work, and outage outcomes. A public-data
+workflow can therefore support transparent exposure ranking, but it should not
+be presented as a full operational risk model.
+
+This study is intentionally narrow. It addresses fire-to-grid external exposure
+ranking for transmission-line receptor assets. It does not estimate
+powerline-caused ignition probability, equipment failure, outage probability,
+damage, or legal responsibility. Electrical-power fire overlap is retained only
+as a diagnostic, because a perimeter-level cause field does not identify the
+exact ignition device or segment.
+
+The methodological question is also narrow. Deterministic public physics scores
+and machine-learning classifiers return useful point scores, but rare-event
+triage often asks threshold and ranking questions: which segments plausibly
+belong in the high-exposure tail, and how uncertain is that ranking? A Bayesian
+decision layer answers these questions with posterior exceedance probability
+and posterior top-decile rank probability. This is the main contribution, rather
+than a claim that Bayesian point prediction dominates all alternatives.
+
+The contributions are:
+\begin{enumerate}
+  \item a reproducible public-data segment-year exposure panel for California
+  transmission-line receptor assets;
+  \item cause-screened external exposure labels that exclude electrical-power
+  fire causes from the main validation target;
+  \item weather, terrain, and fuel-structure covariates for retrospective
+  annual exposure ranking;
+  \item Bayesian posterior exceedance and posterior top-decile rank
+  probabilities as decision-facing outputs; and
+  \item temporal-holdout comparison with deterministic, L2 logistic, tree-based
+  machine-learning, and initial Stan MCMC baselines.
+\end{enumerate}
+
+\section{Study Area and Public Data}
+
+\subsection{Study Area}
+
+The case study focuses on the Northern Sierra and Southern Cascades in
+California. Decision units are approximately 1 km transmission-line segments.
+The analysis panel spans 2017--2023 and uses segment-year rows so annual fire
+labels and annual observed environmental summaries are aligned. The current
+prototype uses a fixed 1 km segment buffer for perimeter-overlap labels; buffer
+sensitivity is a required follow-up analysis. \autoref{fig:study-area} shows
+the study region and receptor-asset segments.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{sci_phase1/fig1_study_area_transmission_fire_labels.png}
+  \caption{Study region, public transmission-line segments, and annual exposure labels.}
+  \label{fig:study-area}
+\end{figure}
+
+\subsection{Public Data Sources}
+
+\autoref{tab:data-sources} summarizes the public data sources. The processed
+panel contains 11,255 line segments and 78,785 segment-year observations. The
+environmental covariate maps are treated as covariate diagnostics and are moved
+to the Appendix so that the main paper emphasizes label construction,
+validation, and decision quantities.
+
+\begin{table}[!htbp]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{3pt}
+  \caption{Public data sources and analytical roles.}
+  \label{tab:data-sources}
+  \begin{tabular}{L{0.16\textwidth} L{0.18\textwidth} L{0.16\textwidth} L{0.14\textwidth} L{0.25\textwidth}}
+    \toprule
+    Dataset & Source & Resolution / unit & Version or years & Role and caveat \\
+    \midrule
+    Transmission lines & California Energy Commission & Public line geometry & Current public release & Receptor assets only; not equipment-failure data. \\
+    Fire perimeters & CAL FIRE FRAP & Perimeter polygons with cause fields & 2017--2023 subset & Exposure labels; not damage or outage observations. \\
+    gridMET & University of Idaho gridMET & Daily weather, annual summaries & 2017--2023 & Observed annual weather covariates. \\
+    LANDFIRE & LANDFIRE LF2024 & Fuel and canopy rasters & LF2024 & Static fuel-structure covariates; time-matched sensitivity is required. \\
+    USGS 3DEP & USGS 3DEP & Elevation raster & Current public DEM & Terrain covariate; not a fire-spread model. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Label Construction}
+
+Let $i$ index line segments, $t$ years, and $j$ individual fire perimeters.
+Let $B_i$ be the segment buffer and $P_j$ be fire perimeter $j$. The main
+external exposure label is
+\begin{equation}
+  y^{exo}_{it}
+  =
+  \ind\left\{
+  \exists j:\; \mathrm{year}(j)=t,\;
+  B_i \cap P_j \neq \emptyset,\;
+  \mathrm{CAUSE}_j \neq 11
+  \right\}.
+  \label{eq:y-exo}
+\end{equation}
+CAL FIRE CAUSE = 11 denotes Electrical Power. The exclusion in
+\autoref{eq:y-exo} is used to avoid mixing external exposure with
+electrical-power fire cause in the main validation target. It does not assert
+that remaining fires cannot affect or be affected by transmission assets.
+
+Four annual labels are retained (\autoref{tab:label-algorithm}). The all-fire
+label records any perimeter overlap. The exogenous label is the main target.
+The strict label further excludes Equipment Use. Electrical-power overlap is a
+diagnostic only and is not interpreted as ignition probability.
+
+\begin{table}[!htbp]
+  \centering
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
+  \caption{Annual segment-year labels. Labels are not mutually exclusive because multiple perimeters can overlap a segment-year.}
+  \label{tab:label-algorithm}
+  \begin{tabular}{L{0.20\textwidth} L{0.42\textwidth} r L{0.22\textwidth}}
+    \toprule
+    Label & Definition & Positives & Interpretation \\
+    \midrule
+    All-fire exposure & Any 1 km segment-buffer intersection with a CAL FIRE perimeter & 3,187 & Broad exposure screen. \\
+    Exogenous exposure & Any overlap after excluding CAUSE = 11 & 2,331 & Main external exposure target. \\
+    Strict exogenous exposure & Excludes CAUSE in \{Electrical Power, Equipment Use\} & 2,075 & Sensitivity label. \\
+    Electrical-power overlap & Any overlap with CAUSE = 11 & 885 & Diagnostic only. \\
+    Mixed exogenous/electrical rows & Segment-years with both exogenous and electrical-power overlaps & 29 & Multiple-fire overlap diagnostic. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{sci_phase1/fig2_cause_screened_label_maps.png}
+  \caption{Cause-screened exposure labels used for receptor-asset validation.}
+  \label{fig:cause-screening}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.88\textwidth]{sci_phase1/fig3_annual_segment_year_label_counts.png}
+  \caption{Annual segment-year label counts.}
+  \label{fig:annual-labels}
+\end{figure}
+\FloatBarrier
+
+\section{Methods}
+
+\subsection{Feature Core}
+
+The selected feature core combines observed annual gridMET dryness and wind
+summaries, USGS terrain, LANDFIRE canopy/fuel-structure variables, and simple
+physics-guided indices. In this paper, physics-guided means that covariates are
+engineered from known weather, fuel, and terrain controls; it does not mean that
+the model simulates fire spread.
+
+Let $z(\cdot)$ denote training-period standardization. The dryness index is
+\begin{equation}
+  \begin{split}
+    d_{it}
+    &=
+    \frac{z(\mathrm{VPD}_{it})+z(\mathrm{ERC}_{it})+z(\mathrm{BI}_{it})+
+    z(\mathrm{wind}_{it})}{4}\\
+    &\quad -
+    \frac{z(\mathrm{FM100}_{it})+z(\mathrm{FM1000}_{it})+
+    z(\mathrm{RMIN}_{it})+z(\mathrm{PR}_{it})}{4}.
+  \end{split}
+\end{equation}
+The fuel-structure index is
+\begin{equation}
+  f_i =
+  \frac{
+  z(\mathrm{canopy\ cover}_i)+
+  z(\mathrm{canopy\ height}_i)+
+  z(\mathrm{canopy\ bulk\ density}_i)
+  }{3}.
+\end{equation}
+The selected core adds $d_{it}f_i$ to the raw public covariates. LANDFIRE
+FBFM40 is categorical and is not used in the selected Bayesian or L2 logistic
+core. The current Phase 5 ablation scripts used FBFM40 as a continuous
+diagnostic variable in several ablations; those ablations are therefore
+reported as exploratory until categorical encoding is implemented.
+
+\begin{table}[!htbp]
+  \centering
+  \small
+  \caption{Feature-construction audit for the current revision.}
+  \label{tab:feature-audit}
+  \begin{tabular}{L{0.26\textwidth} L{0.30\textwidth} L{0.32\textwidth}}
+    \toprule
+    Component & Current implementation & Revision status \\
+    \midrule
+    gridMET annual weather & Annual summaries for VPD, ERC, BI, wind, fuel moisture, humidity, and precipitation & Interpreted retrospectively under observed annual conditions. \\
+    USGS 3DEP terrain & Segment midpoint elevation and derived terrain covariates & Suitable for screening; not a spread simulation. \\
+    LANDFIRE canopy layers & CH/CBH/CBD sampled as raw raster-coded values in processed tables & Report decoded units: CH/CBH raw/10, CBD raw/100. \\
+    LANDFIRE FBFM40 & Used as continuous in some exploratory ablations, not in selected core & Must be categorical or removed in journal-grade ablations. \\
+    Engineered physics indices & Dryness, fuel structure, dryness-by-fuel interaction & Constant unit rescaling does not change standardized linear fit but does change interpretation. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Deterministic Comparator}
+
+The deterministic comparator is a transparent, calibrated physics-guided score.
+It is a benchmark, not the final decision model:
+\begin{equation}
+  r^{det}_{it}
+  =
+  0.56 d_{it} + 0.30 f_i + 0.14 z(\mathrm{elevation}_i).
+\end{equation}
+The raw score is clipped to the training-period 1st--99th percentile range and
+scaled to $[0,1]$. It is then calibrated with a regularized logistic model,
+\begin{equation}
+  p^{det}_{it} = \logit^{-1}(\gamma_0+\gamma_1 s^{det}_{it}).
+\end{equation}
+This gives a single score and calibrated point probability but no posterior
+distribution over ranks.
+
+\subsection{Bayesian and L2 Logistic Models}
+
+The Bayesian exposure model is a weakly regularized logistic regression:
+\begin{align}
+  y^{exo}_{it} &\sim \mathrm{Bernoulli}(p_{it}), \\
+  p_{it} &= \logit^{-1}(\alpha+\mathbf{x}_{it}^{\top}\boldsymbol{\beta}),\\
+  \alpha &\sim \mathcal{N}(0,5^2), \qquad
+  \beta_k \sim \mathcal{N}(0,2^2).
+\end{align}
+The posterior is approximated by a Laplace approximation around the posterior
+mode $\hat{\theta}$, where
+\begin{equation}
+  p(\theta \mid D) \approx
+  \mathcal{N}\left(\hat{\theta},\; H(\hat{\theta})^{-1}\right),
+\end{equation}
+and $H(\hat{\theta})$ is the negative Hessian of the log posterior. This is
+closely related to L2 logistic regression: a Gaussian prior on coefficients is
+equivalent to an L2 penalty at the posterior mode. Thus similar discrimination
+between Bayesian Laplace and L2 logistic is expected. The Bayesian layer is
+retained because posterior draws support rank and threshold decision quantities.
+
+For posterior draw $s$, segment exposure over holdout years $T^\star$ is
+\begin{equation}
+  \bar{p}_{i}^{(s)}
+  =
+  \frac{1}{|T^\star|}
+  \sum_{t\in T^\star} \logit^{-1}
+  \left(\alpha^{(s)}+\mathbf{x}_{it}^{\top}\boldsymbol{\beta}^{(s)}\right).
+\end{equation}
+The decision quantities are
+\begin{align}
+  q_i
+  &= P(\bar{p}_i > \tau \mid D)
+  \approx
+  \frac{1}{S}\sum_{s=1}^{S}
+  \ind\{\bar{p}_{i}^{(s)}>\tau\},\\
+  \rho_i
+  &= P(\mathrm{rank}(\bar{p}_i) \le K \mid D)
+  \approx
+  \frac{1}{S}\sum_{s=1}^{S}
+  \ind\{\mathrm{rank}(\bar{p}_{i}^{(s)})\le K\}.
+\end{align}
+Here $\tau$ is a prevalence-derived exposure threshold and $K$ is the
+top-decile segment count. Because Brier skill is not positive relative to the
+holdout climatology baseline, $\rho_i$ is emphasized as the primary decision
+quantity and $q_i$ as a secondary threshold diagnostic.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.90\textwidth]{phase8/phase8_bayesian_method_schematic-2.png}
+  \caption{Bayesian workflow for posterior exposure and rank probabilities.}
+  \label{fig:method-schematic}
+\end{figure}
+
+\subsection{Validation Design}
+
+Models are trained on 2017--2021 and evaluated on 2022--2023. The holdout set
+contains 22,510 segment-year rows and 356 exogenous exposure positives, giving
+a prevalence of 1.5815\%. PR-AUC is therefore interpreted relative to this
+rare-event prevalence. Metrics include ROC-AUC, PR-AUC, Brier score, Brier
+skill versus climatology, row-level top-k capture, segment-level top-decile
+capture, and a preliminary segment-cluster bootstrap. Temporal holdout is not a
+substitute for spatial block validation.
+
+\section{Results}
+
+\subsection{Temporal Holdout Performance}
+
+\autoref{tab:main-comparison} summarizes temporal-holdout performance. Bayesian
+Laplace, Stan MCMC pilot, and L2 logistic have similar discrimination. Relative
+to the deterministic comparator, Bayesian/L2 ranking captures more holdout
+positives in the top-ranked tail. Relative to L2 logistic, the Bayesian point
+prediction is not materially better; its value is the posterior decision layer.
+
+\begin{table}[!htbp]
+  \centering
+  \small
+  \caption{Temporal-holdout comparison for 2022--2023 exogenous exposure.}
+  \label{tab:main-comparison}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Model & ROC-AUC & PR-AUC & Brier & Row top 10\% & Segment top 10\% \\
+    \midrule
+    ML logistic L2 & 0.663 & 0.039 & 0.015713 & 0.289 & 0.216 \\
+    Bayesian Laplace & 0.662 & 0.038 & 0.015718 & 0.289 & 0.216 \\
+    Stan MCMC pilot & 0.662 & 0.038 & 0.015710 & 0.289 & 0.216 \\
+    Deterministic calibrated & 0.651 & 0.028 & 0.015734 & 0.219 & 0.118 \\
+    Balanced extra trees & 0.617 & 0.022 & 0.056091 & 0.180 & 0.104 \\
+    Histogram gradient boosting & 0.553 & 0.019 & 0.016647 & 0.132 & 0.149 \\
+    Balanced random forest & 0.568 & 0.018 & 0.034539 & 0.107 & 0.152 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.88\textwidth]{phase9/phase9_20260707_113214_topk_capture_curve.png}
+  \caption{Top-k capture curve under 2022--2023 temporal holdout. Bayesian and L2 logistic rankings are close and both exceed the deterministic comparator in this split.}
+  \label{fig:topk-capture}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.82\textwidth]{phase9/phase9_20260707_113214_brier_skill_baseline.png}
+  \caption{Brier skill relative to the holdout climatology baseline. Negative values motivate cautious interpretation of calibrated probabilities.}
+  \label{fig:brier-skill}
+\end{figure}
+
+\begin{table}[!htbp]
+  \centering
+  \small
+  \caption{Rare-event baseline audit. Holdout prevalence is 1.5815\%, and the climatology Brier score is 0.015565.}
+  \label{tab:brier-skill}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Model & PR-AUC & PR-AUC / prevalence & Brier & Brier skill \\
+    \midrule
+    Logistic L2 & 0.03855 & 2.438 & 0.015713 & -0.0095 \\
+    Bayesian Laplace & 0.03838 & 2.427 & 0.015718 & -0.0098 \\
+    Deterministic calibrated & 0.02790 & 1.764 & 0.015734 & -0.0109 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Posterior Decision Maps}
+
+The posterior map outputs should be read as uncertainty-aware exposure-ranking
+diagnostics. In particular, $\rho_i=P(\mathrm{rank}\le K\mid D)$ identifies
+segments that repeatedly fall into the top decile under posterior draws.
+\autoref{fig:bayes-maps} and \autoref{fig:posterior-maps} show the posterior
+decision metrics for the current prototype.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{phase4/phase4_decision_metric_maps.png}
+  \caption{Posterior decision metrics mapped to transmission-line segments.}
+  \label{fig:bayes-maps}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.94\textwidth]{phase8/phase8_faceted_zoom_posterior_maps.png}
+  \caption{Full-region and zoomed maps of posterior rank and exceedance diagnostics.}
+  \label{fig:posterior-maps}
+\end{figure}
+
+\subsection{Feature and Method Audits}
+
+\autoref{fig:landfire-audit} shows the LANDFIRE unit audit. The selected
+Bayesian and L2 logistic core does not use FBFM40, but several exploratory
+ablation models do; those ablations are retained only as diagnostics in this
+revision. The current M5 selected core should also be described as a
+physics-guided selected core, not as an independently tuned final model unless
+pre-specification or nested model selection is documented.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.80\textwidth]{phase9/phase9_20260707_113214_landfire_scaling_audit.png}
+  \caption{LANDFIRE unit audit for canopy height, canopy base height, and canopy bulk density.}
+  \label{fig:landfire-audit}
+\end{figure}
+
+\begin{table}[!htbp]
+  \centering
+  \small
+  \caption{Method audit and current interpretation limits.}
+  \label{tab:method-audit}
+  \begin{tabular}{L{0.27\textwidth} L{0.31\textwidth} L{0.29\textwidth}}
+    \toprule
+    Item & Current status & Manuscript interpretation \\
+    \midrule
+    Temporal holdout & 2017--2021 train, 2022--2023 test & Useful retrospective check; not prospective forecasting proof. \\
+    L2 logistic comparison & Nearly identical discrimination to Bayesian Laplace & Bayesian value is posterior decision quantities. \\
+    Brier skill & Slightly negative versus climatology & Do not claim calibration superiority. \\
+    Segment dependence & Preliminary segment-cluster bootstrap only & Spatial block validation still required. \\
+    Stan MCMC & Initial pilot consistent with Laplace point metrics & Full diagnostics and posterior predictive checks required. \\
+    LANDFIRE time matching & LF2024 used for 2017--2023 panel & Time-matched LANDFIRE sensitivity required. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.82\textwidth]{phase9/phase9_20260707_113214_metric_difference_bootstrap.png}
+  \caption{Preliminary paired uncertainty check from segment-cluster bootstrap. This does not replace spatial block validation.}
+  \label{fig:bootstrap}
+\end{figure}
+\FloatBarrier
+
+\section{Discussion}
+
+The main result is bounded. Public data can support a reproducible,
+screening-level framework for retrospective external wildfire exposure ranking
+of transmission-line receptor assets. The output is a ranked exposure screen,
+not a statement about ignition causality, equipment condition, outage,
+damage, or responsibility.
+
+The temporal-holdout results do not show broad Bayesian classification
+superiority. L2 logistic and Bayesian Laplace have nearly identical ROC-AUC,
+PR-AUC, Brier score, and top-decile capture. This is consistent with the
+relationship between Gaussian-prior logistic regression and L2 penalization.
+The Bayesian contribution is instead decision-facing: posterior draws convert a
+fitted exposure model into posterior exceedance probability and posterior
+top-decile rank probability. These quantities are better aligned with
+rare-event triage than a single deterministic score, because they express
+uncertainty in threshold and rank decisions.
+
+The deterministic comparator remains useful because it is transparent and easy
+to audit. Its limitation is that it gives one ranking without posterior rank
+uncertainty. Flexible tree-based ML baselines do not improve this temporal
+holdout, but this result should be interpreted cautiously. It supports careful
+feature design and temporal validation, not a general rejection of ML.
+
+Existing wildfire risk tools target different questions. Powerline ignition and
+equipment-failure models generally require private utility data and address
+grid-to-fire causality. Fire-spread simulators can represent richer physical
+dynamics but require scenario assumptions and are not automatically calibrated
+for public-data segment ranking. The present framework occupies a narrower
+space: public-data fire-to-grid external exposure ranking with a posterior
+decision layer.
+
+\section{Limitations}
+
+Several limitations are important for a preprint. First, the pipeline estimates
+external exposure only. It does not estimate ignition causality, equipment
+failure, outage probability, damage, or legal responsibility. Second, the CAL
+FIRE cause field is a perimeter-level attribute; electrical-power overlap is
+therefore only a diagnostic label. Third, LF2024 static fuel layers may be
+temporally mismatched with 2017--2023 exposure years; time-matched LANDFIRE
+sensitivity is required. Fourth, FBFM40 must be encoded categorically or
+removed from ablations. Fifth, the current label uses a fixed 1 km buffer;
+250 m, 500 m, 1000 m, and 2000 m buffer sensitivities should be reported.
+Sixth, temporal holdout is not spatial block validation. Finally, the Stan run
+is a pilot; full diagnostics, longer chains, convergence summaries, and
+posterior predictive checks are still needed.
+
+\section{Conclusion}
+
+This paper presents a public-data framework for retrospective external wildfire
+exposure ranking of transmission-line receptor assets. The workflow builds a
+2017--2023 segment-year panel, uses cause-screened exposure labels, and compares
+deterministic, Bayesian, and machine-learning baselines under a 2022--2023
+temporal holdout. Bayesian and L2 logistic point-prediction performance is
+similar. The Bayesian formulation adds posterior exceedance and posterior
+top-decile rank probabilities, with posterior rank probability emphasized as
+the main decision quantity under rare-event calibration limits. The framework
+should not be interpreted as a powerline ignition, equipment-failure, outage,
+damage, or responsibility model.
+
+\appendix
+
+\section{Covariate Diagnostics}
+
+The following maps document the public covariate layers used to construct
+dynamic weather, terrain, and fuel-structure predictors. They are included as
+quality-control and covariate-diagnostic figures rather than as separate
+scientific claims.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{data_previews/phase2_gridmet_preview_2021.png}
+  \caption{gridMET annual fire-weather covariate layers for 2021.}
+  \label{fig:gridmet-layers}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.86\textwidth]{data_previews/phase2_dem_preview.png}
+  \caption{USGS 3DEP terrain covariate layers.}
+  \label{fig:dem-layers}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{data_previews/phase2_landfire_preview.png}
+  \caption{LANDFIRE LF2024 fuel and canopy covariate layers.}
+  \label{fig:landfire-layers}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{phase3/phase3_covariate_qc_distributions.png}
+  \caption{Covariate distribution diagnostics.}
+  \label{fig:covariate-distributions}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{phase3/phase3_spatial_qc_maps.png}
+  \caption{Spatial covariate quality-control maps.}
+  \label{fig:spatial-qc}
+\end{figure}
+
+\section{Reproducibility Notes}
+
+All data processing, feature construction, model fitting, validation, and figure
+generation are scripted in the project repository. Public-source citations are
+still marked as TODO placeholders until a bibliography is added.
+
+\end{document}

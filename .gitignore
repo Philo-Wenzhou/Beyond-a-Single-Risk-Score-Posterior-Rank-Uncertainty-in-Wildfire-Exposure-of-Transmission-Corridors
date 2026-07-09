@@ -1,0 +1,48 @@
+# Ignore large generated data and outputs
+outputs/
+outputs.zip
+Yi_2026_Public_Data_Bayesian_Wildfire_Exposure_Ranking_EarthArXiv_Submission_20260708.zip
+
+# Raw and intermediate data (reproducible from scripts)
+data/raw/
+data/interim/
+data/processed/
+data_model/
+data_intermediate/
+
+# Python environment and logs
+.python_deps/
+logs/
+tmp/
+
+# Common large raster and binary formats
+*.nc
+*.tif
+*.tiff
+*.img
+*.gpkg
+*.sqlite
+*.db
+*.gdb
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Temporary and editor files
+*.bak
+*.tmp
+*.swp
+*.DS_Store
+Thumbs.db
+
+# Build artifacts and generated outputs
+__pycache__/
+*.pyc
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.bbl
+*.blg
+*.exe

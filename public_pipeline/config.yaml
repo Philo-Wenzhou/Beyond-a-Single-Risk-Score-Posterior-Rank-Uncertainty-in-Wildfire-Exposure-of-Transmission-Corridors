@@ -1,0 +1,42 @@
+project:
+  name: public_wildfire_line_exposure
+  crs_wgs84: EPSG:4326
+  crs_projected: EPSG:3310   # California Albers; units in meters
+
+study_area:
+  name: Northern Sierra / Southern Cascades
+  bbox_wgs84: [-123.2, 38.6, -119.0, 41.8]
+  years: [2017, 2018, 2019, 2020, 2021, 2022, 2023]
+
+# Official/public data endpoints. If any endpoint fails, download manually and put files into data_raw/ with the target filenames below.
+sources:
+  fire_perimeters:
+    layer_url: "https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Historic_Fire_Perimeters/FeatureServer/0"
+    target: data_raw/calfire_fire_perimeters_all.geojson
+    note: "CAL FIRE / FRAP historical fire perimeters, all years."
+  transmission_lines:
+    layer_url: "https://services3.arcgis.com/bWPjFyq029ChCGur/arcgis/rest/services/Transmission_Line/FeatureServer/2"
+    target: data_raw/cec_transmission_lines.geojson
+    note: "California Energy Commission electric transmission lines; layer 2 is commonly TransmissionLine_CEC."
+  counties:
+    url: "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_us_county_500k.zip"
+    target: data_raw/ca_counties.geojson
+    note: "US Census county boundaries; script filters STATEFP=06."
+
+fields:
+  fire_year_candidates: [YEAR_, YEAR, FIRE_YEAR, YEARALARM, ALARM_DATE, CONT_DATE]
+  fire_cause_candidates: [CAUSE, CAUSE_NAME, CAUSE_DESCR, STAT_CAUSE_DESCR, CAUSE_BY]
+  fire_name_candidates: [FIRE_NAME, INCIDENT, INCIDENTNAME, FIRE]
+  fire_acres_candidates: [GIS_ACRES, ACRES, Shape__Area]
+  line_voltage_candidates: [kV, KV, VOLTAGE, VOLT_CLASS, MAX_VOLT]
+  line_owner_candidates: [OWNER, OWNER_NAME, Utility]
+  line_name_candidates: [NAME, LINE_NAME, LINENAME, TLINE_NAME]
+  line_type_candidates: [TYPE, LineType, TTYPE]
+  line_status_candidates: [STATUS, Status]
+
+processing:
+  segment_lengths_km: [1.0]
+  buffer_radii_m: [250, 500, 1000, 2000]
+  main_segment_length_km: 1.0
+  main_buffer_radius_m: 1000
+  strict_excluded_causes: [11, 2]

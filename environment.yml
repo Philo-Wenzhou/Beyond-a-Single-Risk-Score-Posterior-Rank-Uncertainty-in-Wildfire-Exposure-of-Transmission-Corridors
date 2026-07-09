@@ -1,0 +1,24 @@
+name: bayes-wildfire-ca
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - geopandas
+  - shapely
+  - pyogrio
+  - rasterio
+  - rioxarray
+  - xarray
+  - netcdf4
+  - dask
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - pymc
+  - arviz
+  - matplotlib
+  - seaborn
+  - jupyterlab
+  - pip
+
